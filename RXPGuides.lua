@@ -10,7 +10,7 @@ if string.match(addon.release, 'project') then
     addon.release = 'Development'
     addon.versionText = 'Development'
 else
-    addon.versionText = "Version " .. addon.release
+    addon.versionText = "Version " .. addon.release .. " (Fixed)"
 end
 
 addon.version = 40000
