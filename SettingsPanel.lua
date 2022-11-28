@@ -16,7 +16,7 @@ local importCache = {
     lastBuffer = 0,
     widget = nil,
     workerFrame = addon.RXPFrame,
-    lastBNetQuery = GetTime()
+    lastBNetQuery = GetTime() - 10
 }
 
 -- Alias addon.locale.Get
