@@ -242,6 +242,9 @@ local function CheckDataIntegrity(str, h1, mode)
 
             return false, L(
                        'Account mismatch, import string does not apply to current account') -- TODO locale
+        elseif mode == 59 then
+            str = LibDeflate:DecompressZlib(addon.read(str))
+            return str and h1 % 4294967296 == addon.A32(str), str
         end
     else
         return addon.A32(str)
