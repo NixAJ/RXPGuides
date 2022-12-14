@@ -3,9 +3,30 @@ local _, addon = ...
 local _G = _G
 
 local BackdropTemplate = BackdropTemplateMixin and "BackdropTemplate"
-local GetContainerNumSlots = C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots
-local GetContainerItemID = C_Container and C_Container.GetContainerItemID or GetContainerItemID
+local GetContainerNumSlots = C_Container and C_Container.GetContainerNumSlots or _G.GetContainerNumSlots
+local GetContainerItemID = C_Container and C_Container.GetContainerItemID or _G.GetContainerItemID
+local GetContainerItemInfo = C_Container and C_Container.GetContainerItemInfo or _G.GetContainerItemInfo
+local GetContainerItemCooldown = C_Container and C_Container.GetContainerItemCooldown or _G.GetContainerItemCooldown
 local GameTooltip = _G.GameTooltip
+local PickupContainerItem = C_Container and C_Container.PickupContainerItem or _G.PickupContainerItem
+local GetItemCooldown = (C_Container and C_Container.GetItemCooldown or _G.GetItemCooldown) or function(searchItemID)
+	local searchItemName = GetItemInfo(searchItemID);
+	if not searchItemName then return end
+	for bagID = _G.BACKPACK_CONTAINER, _G.NUM_BAG_FRAMES do
+		local slots = GetContainerNumSlots(bagID) or 0;
+		for slot = 1, slots do
+			local itemInfo = GetContainerItemInfo(bagID, slot);
+			if itemInfo and itemInfo.itemID then
+				local startTime, duration, isEnabled = GetContainerItemCooldown(bagID, slot);
+				if searchItemID == itemInfo.itemID and startTime ~= nil and startTime > 0 then
+                    return startTime, duration, isEnabled;
+				end
+			end
+		end
+	end
+end
+
+addon.GetItemCooldown = GetItemCooldown
 
 local function GetActiveItemList(ref)
     local itemList = {}
@@ -163,7 +184,7 @@ function addon.CreateActiveItemFrame(self, anchor, enableText)
         f.title.text:ClearAllPoints()
         f.title.text:SetPoint("CENTER", f.title, 2, 1)
         f.title.text:SetJustifyH("CENTER")
-        f.title.text:SetJustifyV("CENTER")
+        f.title.text:SetJustifyV("MIDDLE")
         f.title.text:SetTextColor(1, 1, 1)
         f.title.text:SetFont(addon.font, 9, "")
         f.title.text:SetText("Active Items")
@@ -192,7 +213,7 @@ end
 
 local fOnLeave = function(self)
     if not GameTooltip:IsForbidden() then GameTooltip:Hide() end
-    if IsMouseButtonDown() and not InCombatLockdown() then
+    if IsMouseButtonDown() and not InCombatLockdown() and (not IsMouseButtonDown("Left") or IsModifierKeyDown()) and not SpellIsTargeting() then
         if self.bag and self.slot then
             PickupContainerItem(self.bag, self.slot)
         end
@@ -249,10 +270,10 @@ function addon.UpdateItemFrame(itemFrame)
         if not btn then
             btn = CreateFrame("Button", "$parentButton" .. i, itemFrame,
                               "SecureActionButtonTemplate")
-            btn:SetAttribute("type", "item")
+            btn:SetAttribute("type1", "item")
             btn:SetSize(25, 25)
             if btn.RegisterForClicks and addon.game == "DF" then
-                btn:RegisterForClicks("LeftButtonDown")
+                btn:RegisterForClicks("AnyUp","AnyDown")
             end
             table.insert(buttonList, btn)
             local n = #buttonList
@@ -272,7 +293,7 @@ function addon.UpdateItemFrame(itemFrame)
             btn.text:ClearAllPoints()
             btn.text:SetPoint("CENTER", btn, 0, 0)
             btn.text:SetJustifyH("CENTER")
-            btn.text:SetJustifyV("CENTER")
+            btn.text:SetJustifyV("MIDDLE")
             btn.text:SetTextColor(1, 1, 1)
             btn.text:SetFont(addon.font, 15, "OUTLINE")
             btn.text:SetText("")]]
@@ -295,7 +316,7 @@ function addon.UpdateItemFrame(itemFrame)
         if item.spell then
             attribute = "spell"
         end
-        btn:SetAttribute("type",attribute)
+        btn:SetAttribute("type1",attribute)
         btn:SetAttribute(attribute, item.name)
         if btn.itemId ~= item.id and btn.cooldown then
             btn.cooldown:Clear()

@@ -118,6 +118,12 @@ local GetCurrentCalendarTime = _G.C_DateAndTime.GetCurrentCalendarTime
 local OpenCalendar = _G.C_Calendar.OpenCalendar
 local GossipSelectOption = _G.SelectGossipOption
 local GossipGetOptions = C_GossipInfo.GetOptions or _G.GetGossipOptions
+local PickupContainerItem = C_Container and C_Container.PickupContainerItem or _G.PickupContainerItem
+local GetContainerNumFreeSlots =  C_Container and C_Container.GetContainerNumFreeSlots or _G.GetContainerNumFreeSlots
+local GetContainerNumSlots =  C_Container and C_Container.GetContainerNumSlots or _G.GetContainerNumSlots
+local GetContainerItemID = C_Container and C_Container.GetContainerItemID or _G.GetContainerItemID
+local GetContainerItemInfo = C_Container and C_Container.GetContainerItemInfo or _G.GetContainerItemInfo
+local GetItemCooldown = addon.GetItemCooldown
 
 addon.recentTurnIn = {}
 
@@ -137,6 +143,7 @@ local IsQuestTurnedIn = function(id)
 end
 
 function addon.IsQuestComplete(id)
+    if not id then return end
 
     if C_QuestLog.IsComplete then
         return C_QuestLog.IsComplete(id)
@@ -811,7 +818,11 @@ function addon.functions.turnin(self, ...)
             element.skipIfMissing = true
         end
         element.questId = questConversion[id] or id
-        element.reward = tonumber(reward) or 0
+        if addon.settings.db.profile.enableQuestRewardAutomation then
+            element.reward = tonumber(reward) or 0
+        else
+            element.reward = 0
+        end
         element.title = ""
         -- element.title = addon.GetQuestName(id)
         if text and text ~= "" then
@@ -1994,7 +2005,7 @@ function addon.functions.xp(self, ...)
         return element
     end
 
-    if addon.isHidden then return end
+    if addon.isHidden or not addon.settings.db.profile.enableXpStepSkipping then return end
 
     local currentXP = UnitXP("player")
     local maxXP = UnitXPMax("player")
@@ -2579,33 +2590,45 @@ function addon.functions.isQuestComplete(self, ...)
     end
 end
 
-function addon.functions.isOnQuest(self, ...)
+function addon.functions.isOnQuest(self, text, ...)
     if type(self) == "string" then
         local element = {}
-        local text, id, reverse = ...
-        element.reverse = reverse
-        id = tonumber(id)
-        if not id then
+        local ids = {...}
+        for i,v in pairs(ids) do
+            ids[i] = tonumber(v)
+        end
+        if not ids[1] then
             return addon.error(
                         L("Error parsing guide") .. " " .. addon.currentGuideName ..
                            ": Invalid quest ID\n" .. self)
         end
-        element.questId = id
+        element.questIds = ids
         if text and text ~= "" then element.text = text end
         element.textOnly = true
         return element
     end
     local element = self.element
-    local id = element.questId
+    local onQuest = false
+    for _,id in pairs(element.questIds) do
+        if IsOnQuest(id) then
+            onQuest = true
+        end
+    end
+
+
     local event = ...
-    if event ~= "WindowUpdate" and element.step.active and not addon.settings.db.profile.debug and (not IsOnQuest(id)) == not element.reverse and not addon.isHidden then
+    if event ~= "WindowUpdate" and element.step.active and not addon.settings.db.profile.debug and (not onQuest) == not element.reverse and not addon.isHidden then
         element.step.completed = true
         addon.updateSteps = true
     end
 end
 
-function addon.functions.isNotOnQuest(self, text, id)
-    return addon.functions.isOnQuest(self, text, id, true)
+function addon.functions.isNotOnQuest(...)
+    local element = addon.functions.isOnQuest(...)
+    if type(element) == "table" then
+        element.reverse = true
+        return element
+    end
 end
 
 function addon.functions.isQuestTurnedIn(self, text, ...)
@@ -3419,7 +3442,7 @@ function addon.functions.maxlevel(self, ...)
 
     if addon.isHidden then
         return
-    elseif level > element.level then
+    elseif level > element.level and addon.settings.db.profile.enableXpStepSkipping then
         if step.active and not step.completed and not addon.settings.db.profile.northrendLM then
             addon.updateSteps = true
             step.completed = true
@@ -4325,23 +4348,28 @@ function addon.functions.isWorldQuestAvailable(self, ...)
     local element = self.element
     local taskInfo = C_TaskQuest.GetQuestsForPlayerByMapID(element.mapId)
 
+    local available = false
+
     for i=1, #taskInfo do
         local questId = taskInfo[i].questId
         if questId == element.questId and QuestUtils_IsQuestWorldQuest(questId) then
             local timeLeft = C_TaskQuest.GetQuestTimeLeftMinutes(questId)
-            if (element.duration < 0 or timeLeft >= element.duration) == element.reverse then
-                element.step.completed = true
-                addon.updateSteps = true
+            if (element.duration < 0 or timeLeft >= element.duration) then
+                available = true
             end
-
-           break
+            break
         end
+    end
+
+    if available == element.reverse then
+        element.step.completed = true
+        addon.updateSteps = true
     end
 
 end
 
 function addon.functions.isWorldQuestUnavailable(self, ...)
-    local element = addon.functions.achievement(self, ...)
+    local element = addon.functions.isWorldQuestAvailable(self, ...)
     if type(element) == "table" then
         element.reverse = true
         return element
