@@ -59,10 +59,12 @@ events.acceptmultiple = events.accept
 events.dailyturninmultiple = events.turnin
 
 local function GetIcon(path,index,size)
-    local coords = GetPOITextureCoords or C_Minimap.GetPOITextureCoords
+    local coords = _G.GetPOITextureCoords or C_Minimap.GetPOITextureCoords
     local x1, x2, y1, y2 = coords(index)
     return format("|T%s:0:0:0:0:%d:%d:%d:%d:%d:%d|t", path, size, size, x1*size, x2*size, y1*size, y2*size)
 end
+
+addon.GetIcon = GetIcon
 
 addon.icons = {
     accept = "|TInterface/GossipFrame/AvailableQuestIcon:0|t",
@@ -90,15 +92,18 @@ addon.icons = {
     error = "|TInterface/Buttons/UI-GroupLoot-Pass-Up:0|t",
     clock = "|TInterface/ICONS/INV_Misc_PocketWatch_02:0|t",
 }
-
-if addon.gameVersion > 30000 then
-    addon.icons["goto"] = GetIcon("Interface/MINIMAP/POIICONS",7,128)
-    addon.icons.deathskip = GetIcon("Interface/MINIMAP/POIICONS",8,128)
-    addon.icons.home = GetIcon("Interface/MINIMAP/POIICONS",5,128)
+if addon.gameVersion > 40000 then
+    addon.icons["goto"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:63:72:0:4|t"
+    addon.icons["home"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:45:54:0:4|t"
+    addon.icons["deathskip"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:72:81:0:4|t"
+elseif addon.gameVersion > 30000 then
+    addon.icons["goto"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:63:72:0:9|t"
+    addon.icons["home"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:45:54:0:9|t"
+    addon.icons["deathskip"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:72:81:0:9|t"
 else
-    addon.icons["goto"] = GetIcon("Interface/MINIMAP/POIICONS",6,128)
-    addon.icons.deathskip = GetIcon("Interface/MINIMAP/POIICONS",7,128)
-    addon.icons.home = GetIcon("Interface/MINIMAP/POIICONS",4,128)
+    addon.icons["goto"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:96:112:0:16|t"
+    addon.icons["home"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:64:80:0:16|t"
+    addon.icons["deathskip"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:112:128:0:16|t"
 end
 
 addon.icons.acceptmultiple = addon.icons.accept
@@ -4053,11 +4058,11 @@ function addon.functions.flyable(self, text, zone, skill)
         element.skill = tonumber(skill) or -4
         return element
     end
-    local ridingSkill = RXP.GetSkillLevel("riding")
+    local ridingSkill = RXP.GetSkillLevel("riding") or -4
     local element = self.element
     local canPlayerFly = addon.CanPlayerFly(element.zone) ~= element.reverse
     --print(canPlayerFly,'t')
-    if element.step.active and not addon.settings.db.profile.debug and (not canPlayerFly or ridingSkill < element.skill) and not addon.isHidden then
+    if element.step.active and not addon.settings.db.profile.debug and (not canPlayerFly or ridingSkill < (element.skill or -4)) and not addon.isHidden then
         element.step.completed = true
         addon.updateSteps = true
     end
