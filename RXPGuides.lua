@@ -59,29 +59,7 @@ function RXPG_init()
     if RXPData.trainGenericSpells == nil then
         RXPData.trainGenericSpells = true
     end
-
-    C_Timer.After(0.5, function()
-        if addon.errorCount == addon.guideErrorCount then
-            addon.errorCount = -1
-            _G.ScriptErrorsFrame:Hide()
-        end
-    end)
 end
-
-addon.errorCount = 0
-addon.guideErrorCount = 0
-
-hooksecurefunc(_G.ScriptErrorsFrame, "DisplayMessage",
-               function(self, msg, warnType, keepHidden, messageType)
-    if _G.ScriptErrorsFrame:IsForbidden() then return end
-    if addon.errorCount >= 0 then
-        if warnType == 0 and keepHidden == false and messageType == 1 and
-            type(msg) == "string" and msg:match(addonName .. "\\Guides") then
-            addon.guideErrorCount = addon.guideErrorCount + 1
-        end
-        addon.errorCount = addon.errorCount + 1
-    end
-end)
 
 local startTime = GetTime()
 
@@ -546,7 +524,7 @@ end
 
 --Tracks if a player is on a loading screen and pauses the main update loop
 --Some information is not available during zone transitions
-function addon:PLAYER_ENTERING_WORLD()
+function addon:PLAYER_ENTERING_WORLD(_, isInitialLogin)
     if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and RXPCData then
         RXPCData.GA = false
     end
@@ -554,9 +532,12 @@ function addon:PLAYER_ENTERING_WORLD()
     addon.updateMap = true
     addon.isHidden = addon.settings and addon.settings.db.profile.hideGuideWindow or
                                          not (addon.RXPFrame and addon.RXPFrame:IsShown())
-    C_Timer.After(5, function ()
-        addon.settings:DetectXPRate()
-    end)
+
+    if isInitialLogin then
+        C_Timer.After(5, function ()
+            addon.settings:DetectXPRate()
+        end)
+    end
 end
 
 function addon:PLAYER_LEAVING_WORLD()
@@ -653,7 +634,7 @@ function addon.HideInRaid()
     if not UnitInRaid("player") then return end
 
     for _, frame in pairs(addon.enabledFrames) do
-        frame:Hide()
+        if not frame:IsForbidden() then frame:Hide() end
     end
 end
 

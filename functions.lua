@@ -105,6 +105,8 @@ else
     addon.icons["home"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:64:80:0:16|t"
     addon.icons["deathskip"] = "|TInterface/MINIMAP/POIICONS:0:0:0:0:128:128:112:128:0:16|t"
 end
+addon.icons.groundgoto = addon.icons["goto"]
+addon.icons.flygoto = addon.icons["goto"]
 
 addon.icons.acceptmultiple = addon.icons.accept
 addon.icons.turninmultiple = addon.icons.turnin
@@ -215,6 +217,12 @@ function addon.FormatNumber(number, precision)
 
     for n in string.gmatch(suffix, "%d%d%d") do integer = integer .. "," .. n end
     return integer .. decimal
+end
+
+function addon.Round(number, precision)
+    precision = precision and 10 ^ precision or 1
+    local integer = math.floor(number)
+    return integer + math.floor((number - integer) * precision + 0.5)/precision
 end
 
 function addon.GetQuestName(id)
@@ -1599,12 +1607,14 @@ end
 function addon.functions.fp(self, ...)
     if type(self) == "string" then -- on parse
         local element = {}
-        local text, location = ...
+        local text, location, skipStep = ...
         element.tag = "fp"
-        if text and text ~= "" then
+        if skipStep then
+            element.text = text
+            element.textOnly = true
+        elseif text and text ~= "" then
             element.text = text
         else
-            element.textOnly = true
             element.text = string.format(L("Get the %s flight path"), location)
         end
 
@@ -1622,9 +1632,15 @@ function addon.functions.fp(self, ...)
     end
     local event, arg1, arg2 = ...
     local element = self.element
-    if (element.fpId and RXPCData.flightPaths[element.fpId]) or
-        (event == "UI_INFO_MESSAGE" and arg2 == _G.ERR_NEWTAXIPATH and
-            self.element.step.active) then addon.SetElementComplete(self) end
+    if self.element.step.active then
+        local fpDiscovered = element.fpId and RXPCData.flightPaths[element.fpId]
+        if element.textOnly and fpDiscovered then
+            element.step.completed = true
+            addon.updateSteps = true
+        elseif fpDiscovered or (event == "UI_INFO_MESSAGE" and arg2 == _G.ERR_NEWTAXIPATH) then
+            addon.SetElementComplete(self)
+        end
+    end
 end
 
 function addon.functions.fly(self, ...)
@@ -2403,7 +2419,7 @@ end
 function addon.functions.train(self, ...)
     if type(self) == "string" then -- on parse
         local element = {}
-        local text, id, rank = ...
+        local text, id, flags = ...
         local spellId = tonumber(id)
 
         if spellId then
@@ -2417,24 +2433,24 @@ function addon.functions.train(self, ...)
                         L("Error parsing guide") .. " " .. addon.currentGuideName ..
                            ": Invalid spell name/id\n" .. self)
         end
-        if rank then element.rank = tonumber(rank:match("(%d+)")) or 0 end
-
+        element.flags = tonumber(flags) or 0
+        if bit.band(element.flags,0x1) == 0x1 then
+            element.textOnly = true
+        end
         if element.id and not C_Spell.IsSpellDataCached(element.id) then
             C_Spell.RequestLoadSpellData(element.id)
         end
 
-        if text and text ~= "" then
-            element.text = text
-        else
-            element.text = "-"
-        end
+        element.text = text
+
         element.requestFromServer = true
-        element.tooltipText = addon.icons.trainer .. element.text
+        element.reverse = bit.band(element.flags,0x2) == 0x2
         return element
     end
     local element = self.element
     local event = ...
     local rank = element.rank or 0
+    local step = element.step
     if not element.rank and C_Spell.IsSpellDataCached(element.id) then
         rank = GetSpellSubtext(element.id)
         rank = tonumber(rank:match("(%d+)")) or 0
@@ -2443,10 +2459,17 @@ function addon.functions.train(self, ...)
     end
     if not element.title then element.title = GetSpellInfo(element.id) end
 
-    if IsPlayerSpell(element.id) or IsSpellKnown(element.id, true) or
-        IsSpellKnown(element.id) then addon.SetElementComplete(self, true) end
+    if step.active and ((IsPlayerSpell(element.id) or IsSpellKnown(element.id, true) or
+        IsSpellKnown(element.id)) ~= element.reverse) then
+        if element.textOnly then
+            self.element.step.completed = true
+            addon.updateSteps = true
+        else
+            addon.SetElementComplete(self, true)
+        end
+    end
 
-    if element.title then
+    if element.title and not element.reverse then
         if element.completed or element.step.completed or
             not element.step.active then
             addon.skillList[element.title] = nil
@@ -4043,6 +4066,7 @@ function addon.functions.noflyable(self, text, zone, skill)
         if text and text ~= "" then element.text = text end
         element.textOnly = true
         element.reverse = true
+        element.skill = tonumber(skill) or -4
         return element
     end
     return addon.functions.flyable(self, text, zone, skill)
@@ -4060,9 +4084,12 @@ function addon.functions.flyable(self, text, zone, skill)
     end
     local ridingSkill = RXP.GetSkillLevel("riding") or -4
     local element = self.element
-    local canPlayerFly = addon.CanPlayerFly(element.zone) ~= element.reverse
+    local canPlayerFly = (addon.CanPlayerFly(element.zone) and ridingSkill >= element.skill)
+    if element.reverse then
+        canPlayerFly = not canPlayerFly
+    end
     --print(canPlayerFly,'t')
-    if element.step.active and not addon.settings.db.profile.debug and (not canPlayerFly or ridingSkill < (element.skill or -4)) and not addon.isHidden then
+    if element.step.active and not addon.settings.db.profile.debug and (not canPlayerFly) and not addon.isHidden then
         element.step.completed = true
         addon.updateSteps = true
     end
@@ -4378,5 +4405,63 @@ function addon.functions.isWorldQuestUnavailable(self, ...)
     if type(element) == "table" then
         element.reverse = true
         return element
+    end
+end
+
+events.itemStat = "PLAYER_EQUIPMENT_CHANGED"
+function addon.functions.itemStat(self, ...)
+    if type(self) == "string" then -- on parse
+        local element = {}
+        local text, slot, stat, value = ...
+        slot = tonumber(slot)
+        if value then
+            value = value:gsub(" ", "")
+            local operator, total = value:match("([<>]?)(.+)")
+            element.operator = operator
+            element.total = total
+        end
+        if not (slot and stat and element.total) then
+            return addon.error(
+                        L("Error parsing guide") .. " "  .. addon.currentGuideName ..
+                           ': Invalid arguments\n' .. self)
+        end
+        element.slot = slot
+        element.stat = stat
+        element.textOnly = true
+        element.text = text
+        return element
+    else
+        local element = self.element
+        local step = element.step
+        if step.active then
+            local completed
+            local stats = GetItemStats(GetInventoryItemLink("player", element.slot) or "") or {}
+            local stat
+            if element.stat == "QUALITY" then
+                stat = GetInventoryItemQuality("player", element.slot)
+            else
+                stat = stats[element.stat]
+            end
+
+            if not stat then
+                return
+            elseif type(stat) == "number" then
+                stat = addon.Round(stat,1)
+                element.total = tonumber(element.total) or 0
+                --print('+',stat,element.total, element.operator)
+                if (element.operator == ">" and element.total < stat) or (element.operator == "<" and element.total > stat) then
+                    completed = true
+                elseif element.operator == "" and element.total == stat then
+                    completed = true
+                end
+            else
+                completed = element.total == stat
+            end
+
+            if not completed then
+                element.step.completed = true
+                addon.updateSteps = true
+            end
+        end
     end
 end
