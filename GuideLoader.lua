@@ -115,6 +115,8 @@ function RXPG.AddGuide(guide)
         addon.guideList[guide.group].names_ = {}
     end
 
+    addon.guideList[guide.group].weight_ = tonumber(guide.groupweight) or addon.guideList[guide.group].weight_
+
     local list = addon.guideList[guide.group]
 
     if loadedGuide then -- guide exists, but new version
@@ -635,6 +637,11 @@ function RXPG.ParseGuide(groupOrContent, text, defaultFor)
             if tag == "link" then
                 local link = args:gsub("%s+$", "")
                 table.insert(t, link)
+            elseif tag == "mob" or tag == "unitscan" or tag == "target" then
+                args = args:gsub("%s*;%s*", ";")
+                for arg in string.gmatch(args, "[^;]+") do
+                    table.insert(t, arg)
+                end
             else
                 args = args:gsub("%s*,%s*", ",")
                 for arg in string.gmatch(args, "[^,]+") do

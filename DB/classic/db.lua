@@ -11,6 +11,21 @@ addon.skipPreReq = {
     [10008] = 1
 }
 
+local _,class = UnitClass("player")
+
+addon.defaultGuideList = {
+    ["Elwynn Forest"] = "RestedXP Alliance 1-20\\01-06 Northshire",
+    ["Teldrassil"] = "RestedXP Alliance 1-20\\01-06 Shadowglen",
+    ["Dun Morogh"] = "RestedXP Alliance 1-20\\01-06 Coldridge Valley",
+    ["Durotar"] = "RestedXP Horde 1-30\\01-10 Durotar",
+    ["Mulgore"] = "RestedXP Horde 1-30\\01-06 Red Cloud Mesa",
+    ["Tirisfal Glades"] = "RestedXP Horde 1-30\\01-11 Tirisfal Glades",
+}
+
+if class == "HUNTER" then
+    addon.defaultGuideList["Dun Morogh"] = "RestedXP Alliance 1-20\\1-6 Coldridge Valley (Hunter)"
+end
+
 addon.questConversion = {
 }
 
@@ -66,6 +81,63 @@ addon.mapId = {
 	["Eastern Kingdoms"] = 1415,
 }
 
+addon.FPbyZone = {
+    ["Horde"] = {
+        [1448] = 48,
+        [1418] = 21,
+        [1450] = 69,
+        [1451] = 72,
+        [1452] = 53,
+        [1454] = 23,
+        [1425] = 76,
+        [1458] = 11,
+        [1428] = 70,
+        [1456] = 22,
+        [1444] = 42,
+        [1442] = 29,
+        [1435] = 56,
+        [1421] = 10,
+        [1449] = 79,
+        [1423] = 68,
+        [1427] = 75,
+        [1441] = 30,
+        [1411] = 23,
+        [1443] = 38,
+        [1445] = 55,
+        [1446] = 40,
+        [1447] = 44,
+        [1412] = 22,
+    },
+    ["Alliance"] = {
+        [1448] = 65,
+        [1449] = 79,
+        [1450] = 49,
+        [1451] = 73,
+        [1452] = 52,
+        [1422] = 66,
+        [1423] = 67,
+        [1455] = 6,
+        [1425] = 43,
+        [1426] = 6,
+        [1427] = 74,
+        [1428] = 71,
+        [1431] = 12,
+        [1432] = 8,
+        [1436] = 4,
+        [1437] = 7,
+        [1438] = 27,
+        [1439] = 26,
+        [1440] = 28,
+        [1442] = 33,
+        [1443] = 37,
+        [1413] = 80,
+        [1445] = 32,
+        [1446] = 39,
+        [1447] = 64,
+        [1419] = 45,
+        [1453] = 2,
+    },
+}
 
 addon.professionID = {
     alchemy = {2259, 3101, 3464, 11611, 28596, 51304},
@@ -81,12 +153,15 @@ addon.professionID = {
     tailoring = {3908, 3909, 3910, 12180, 26790, 51309},
     cooking = {2550, 3102, 3413, 18260, 33359, 51296},
     firstaid = {3273, 3274, 7924, 10846, 27028, 45542},
-    fishing = {7620, 7731, 7732, 18248, 33095, 51294}
+    fishing = {7620, 7731, 7732, 18248, 33095, 51294},
+    lockpicking = {1804},
+    poisons = {2842},
 }
 
 C_Spell.RequestLoadSpellData(2575) -- mining
 C_Spell.RequestLoadSpellData(9134) -- herbalism
 C_Spell.RequestLoadSpellData(33388) -- riding
+C_Spell.RequestLoadSpellData(1809) -- lockpicking
 
 local events = {"PLAYER_XP_UPDATE","QUEST_LOG_UPDATE"}
 
@@ -133,14 +208,15 @@ function addon.functions.xpto60alliance(self,...) --PLAYER_XP_UPDATE,QUEST_LOG_U
 		return
 	end
 
+    local som = {som = true, phase = "2"}
     local xpMod = 1
     local eliteMod = 1
 	--1.90980392157?
 
-    if RXPCData and RXPCData.SoM then
+    if addon.SeasonCheck(som) then
 		xpMod = 1.4
         eliteMod = 1.7
-		if RXPData.phase and RXPData.phase > 2 then
+		if addon.PhaseCheck(som) then
 			xpMod = xpMod*2/1.4
 			eliteMod = eliteMod*2/1.4
 		end
@@ -262,14 +338,15 @@ function addon.functions.xpto60horde(self,...)
 		return
 	end
 
+    local som = {som = true, phase = "2"}
     local xpMod = 1
     local eliteMod = 1
 	--1.90980392157?
 
-    if RXPCData and RXPCData.SoM then
-        xpMod = 1.4
+    if addon.SeasonCheck(som) then
+		xpMod = 1.4
         eliteMod = 1.7
-		if RXPData.phase and RXPData.phase > 2 then
+		if addon.PhaseCheck(som) then
 			xpMod = xpMod*2/1.4
 			eliteMod = eliteMod*2/1.4
 		end

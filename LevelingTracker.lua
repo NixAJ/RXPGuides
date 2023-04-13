@@ -69,7 +69,7 @@ function addon.tracker:SetupTracker()
     self:CompileData()
 
     self:CreateGui(_G.CharacterFrame, playerName)
-    self.reportKey = fmt("%s|%s|%s", playerName, _G.UnitClass("player"),
+    self.reportKey = fmt("%s|%s|%s", playerName, addon.player.class,
                          _G.GetRealmName())
 
     if addon.settings.db.profile.enablelevelSplits then
@@ -1156,8 +1156,7 @@ function addon.tracker:CreateLevelSplits()
     f.title.cog:SetWidth(18)
     f.title.cog:SetHeight(18)
     f.title.cog:SetPoint("LEFT", f.title, "LEFT", -9, 0)
-    f.title.cog:SetNormalTexture("Interface/AddOns/" .. addonName ..
-                                     "/Textures/rxp_cog-32")
+    f.title.cog:SetNormalTexture(addon.GetTexture("rxp_cog-32"))
     f.title.cog:SetHighlightTexture(
         "Interface/MINIMAP/UI-Minimap-ZoomButton-Highlight", "ADD")
     f.title.cog:Show()
@@ -1170,7 +1169,7 @@ function addon.tracker:CreateLevelSplits()
     f.title.text:ClearAllPoints()
     f.title.text:SetJustifyH("CENTER")
     f.title.text:SetJustifyV("MIDDLE")
-    f.title.text:SetTextColor(1, 1, 1)
+    f.title.text:SetTextColor(unpack(addon.activeTheme.textColor))
     f.title.text:SetFont(addon.font, 9, "")
     f.title.text:SetText("Level splits")
     f.title.text:SetPoint("CENTER", f.title, 0, 1)
@@ -1208,7 +1207,11 @@ function addon.tracker:CreateLevelSplits()
 
     f:SetAlpha(addon.settings.db.profile.levelSplitsOpacity)
     f.title:SetIgnoreParentAlpha(true)
-    f.title:SetAlpha(addon.settings.db.profile.levelSplitsOpacity + 0.1)
+    if addon.settings.db.profile.levelSplitsOpacity + 0.1 > 1.0 then
+        f.title:SetAlpha(1)
+    else
+        f.title:SetAlpha(addon.settings.db.profile.levelSplitsOpacity + 0.1)
+    end
 
     f:HookScript("OnUpdate", function() addon.tracker:RefreshSplitsSummary() end)
 
@@ -1248,9 +1251,9 @@ end
 
 function addon.tracker:CompileLevelSplits(kind)
     local splitsReportData = {
-        title = fmt("%s (%s) - %s", playerName, _G.UnitClass("player"),
+        title = fmt("%s (%s) - %s", playerName, addon.player.class,
                     _G.GetRealmName()),
-        reportKey = fmt("%s|%s|%s", playerName, _G.UnitClass("player"),
+        reportKey = fmt("%s|%s|%s", playerName, addon.player.class,
                         _G.GetRealmName())
     }
     local secondsSinceLogin = difftime(time(), addon.tracker.state.login.time)

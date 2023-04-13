@@ -13,7 +13,8 @@ if string.match(addon.release, 'project') then
     addon.release = L('Development')
     addon.versionText = L('Development')
 else
-    addon.versionText = string.format("%s %s", _G.GAME_VERSION_LABEL, addon.release)
+    addon.versionText = string.format("%s %s", _G.GAME_VERSION_LABEL,
+                                      addon.release)
 end
 
 addon.version = 40000
@@ -40,6 +41,7 @@ addon.RXPG = {}
 addon.functions = {}
 addon.enabledFrames = {} -- Hold all enabled frame/features for Hide/Show
 addon.player = {
+    localeClass = select(1, UnitClass("player")),
     class = select(2, UnitClass("player"))
 }
 
@@ -47,19 +49,6 @@ BINDING_HEADER_RXPGuides = addon.title
 BINDING_HEADER_RXPTargeting = addon.title
 
 local questFrame = CreateFrame("Frame");
-
-function RXPG_init()
-    RXPCData.completedWaypoints = RXPCData.completedWaypoints or {}
-    addon.settings.db.profile.hardcore = addon.game == "CLASSIC" and addon.settings.db.profile.hardcore
-    addon.RenderFrame()
-    RXPCData.stepSkip = RXPCData.stepSkip or {}
-    if not RXPCData.flightPaths or UnitLevel("player") <= 6 then
-        RXPCData.flightPaths = {}
-    end
-    if RXPData.trainGenericSpells == nil then
-        RXPData.trainGenericSpells = true
-    end
-end
 
 local startTime = GetTime()
 
@@ -83,7 +72,8 @@ function addon.QuestAutoTurnIn(title)
                 element = v
             end
         end
-        return (element and element.step.active) and element.reward >= 0 and element.reward
+        return (element and element.step.active) and element.reward >= 0 and
+                   element.reward
     end
 end
 
@@ -101,6 +91,8 @@ function addon.GetProfessionNames()
                     professionNames[profession] = GetSpellInfo(2575)
                 elseif id == 2383 then
                     professionNames[profession] = GetSpellInfo(9134)
+                elseif id == 1804 then
+                    professionNames[profession] = GetSpellInfo(1809)
                 else
                     professionNames[profession] = GetSpellInfo(id)
                 end
@@ -131,13 +123,9 @@ function addon.GetProfessionLevel()
         currrentSkillLevel["riding"] = 375
     end
 
-    if IsPlayerSpell(54197) then
-        currrentSkillLevel["coldweatherflying"] = 1
-    end
+    if IsPlayerSpell(54197) then currrentSkillLevel["coldweatherflying"] = 1 end
 
-    if not _G.GetSkillLineInfo then
-        return
-    end
+    if not _G.GetSkillLineInfo then return end
     if not names.riding then names.riding = GetSpellInfo(33388) end
     for i = 1, _G.GetNumSkillLines() do
         local skillName, _, _, skillRank, _, _, skillMaxRank =
@@ -183,10 +171,9 @@ local trainerUpdate = 0
 
 local function ProcessSpells(names, rank)
     if gameVersion > 90000 then return end
-    local _, class = UnitClass("player")
     local _, race = UnitRace("player")
     local level = UnitLevel("player")
-    local entries = {race, class}
+    local entries = {race, addon.player.class}
     for _, entry in pairs(entries) do
         if addon.defaultSpellList[entry] then
             for spellLvl, spells in pairs(addon.defaultSpellList[entry]) do
@@ -198,8 +185,8 @@ local function ProcessSpells(names, rank)
                             spellRequest[spellId] = true
                         end
                         if names and rank and
-                            not (addon.settings.db.profile.hardcore and addon.HCSpellList and
-                                addon.HCSpellList[spellId]) then
+                            not (addon.settings.db.profile.hardcore and
+                                addon.HCSpellList and addon.HCSpellList[spellId]) then
                             spellRequest[spellId] = nil
                             local sName = GetSpellInfo(spellId)
                             local sRank = GetSpellSubtext(spellId)
@@ -267,7 +254,9 @@ local GossipGetNumActiveQuests = C_GossipInfo.GetNumActiveQuests or
                                      _G.GetNumGossipActiveQuests
 local GossipGetNumAvailableQuests = C_GossipInfo.GetNumAvailableQuests or
                                         _G.GetNumGossipAvailableQuests
-local GossipGetNumOptions = C_GossipInfo.GetOptions and function() return #C_GossipInfo.GetOptions() end or _G.GetNumGossipOptions
+local GossipGetNumOptions = C_GossipInfo.GetOptions and
+                                function() return #C_GossipInfo.GetOptions() end or
+                                _G.GetNumGossipOptions
 local GossipSelectAvailableQuest = C_GossipInfo.SelectAvailableQuest or
                                        _G.SelectGossipAvailableQuest
 local GossipGetActiveQuests = C_GossipInfo.GetActiveQuests or
@@ -351,24 +340,31 @@ function addon:QuestAutomation(event, arg1, arg2, arg3)
     elseif event == "GOSSIP_SHOW" then
         local nActive = GossipGetNumActiveQuests()
         local nAvailable = GossipGetNumAvailableQuests()
-        local quests, selectAvailableByQuestID, selectActiveByQuestID
+        local quests, selectAvailableByQuestID, selectActiveByQuestID,
+              missingTurnIn
         if C_GossipInfo.GetActiveQuests then
             quests = C_GossipInfo.GetActiveQuests()
             selectActiveByQuestID = true
         end
         for i = 1, nActive do
-            local title, level, isTrivial, isComplete
+            local title, isComplete
             if type(quests) == "table" then
                 title = quests[i].questID
                 isComplete = quests[i].isComplete
+                if not (isComplete or missingTurnIn) and
+                    addon.QuestAutoTurnIn(title) then
+                    local objectives = addon.GetQuestObjectives(title)
+                    missingTurnIn = objectives and objectives[1].generated and
+                                        (selectActiveByQuestID and title or i)
+                end
             else
-                title, level, isTrivial, isComplete = select(i * 6 - 5,
-                                                             GossipGetActiveQuests())
+                title, _, _, isComplete = select(i * 6 - 5,
+                                                 GossipGetActiveQuests())
             end
-            -- print(title)
-            -- print(quests[i])
-            if addon.QuestAutoTurnIn(title) and isComplete then
-                return GossipSelectActiveQuest(selectActiveByQuestID and title or i)
+
+            if isComplete and addon.QuestAutoTurnIn(title) then
+                return GossipSelectActiveQuest(
+                           selectActiveByQuestID and title or i)
             end
         end
 
@@ -377,8 +373,11 @@ function addon:QuestAutomation(event, arg1, arg2, arg3)
             availableQuests = C_GossipInfo.GetAvailableQuests()
             selectAvailableByQuestID = true
         end
-        if GossipGetNumOptions() == 0 and nAvailable == 1 and nActive == 0 and not selectAvailableByQuestID then
-            GossipSelectAvailableQuest(selectAvailableByQuestID and availableQuests[1] and availableQuests[1].questID or 1)
+        if GossipGetNumOptions() == 0 and nAvailable == 1 and nActive == 0 and
+            not selectAvailableByQuestID then
+            return GossipSelectAvailableQuest(
+                       selectAvailableByQuestID and availableQuests[1] and
+                           availableQuests[1].questID or 1)
         else
             for i = 1, nAvailable do
                 local quest
@@ -388,9 +387,13 @@ function addon:QuestAutomation(event, arg1, arg2, arg3)
                     quest = select(i * 7 - 6, GossipGetAvailableQuests())
                 end
                 if addon.QuestAutoAccept(quest) then
-                    return GossipSelectAvailableQuest(selectAvailableByQuestID and quest or i)
+                    return GossipSelectAvailableQuest(
+                               selectAvailableByQuestID and quest or i)
                 end
             end
+        end
+        if missingTurnIn then
+            return GossipSelectActiveQuest(missingTurnIn)
         end
     end
 end
@@ -406,15 +409,37 @@ function addon:OnInitialize()
 
     if not RXPData.gameVersion then
         RXPData.gameVersion = gameVersion
-    elseif math.floor(gameVersion/1e4) ~= math.floor(RXPData.gameVersion/1e4) then
+    elseif math.floor(gameVersion / 1e4) ~=
+        math.floor(RXPData.gameVersion / 1e4) then
         addon.db.profile.guides = {}
         RXPData.gameVersion = gameVersion
     end
     addon.settings:InitializeSettings()
-    RXPG_init()
+
+    RXPCData.completedWaypoints = RXPCData.completedWaypoints or {}
+    addon.settings.db.profile.hardcore =
+        addon.game == "CLASSIC" and addon.settings.db.profile.hardcore
+    RXPCData.stepSkip = RXPCData.stepSkip or {}
+    if not RXPCData.flightPaths or UnitLevel("player") <= 6 then
+        RXPCData.flightPaths = {}
+    end
+    if RXPData.trainGenericSpells == nil then
+        RXPData.trainGenericSpells = true
+    end
+
+    addon:ImportCustomThemes()
+    addon:LoadActiveTheme()
+    addon.settings:UpdateMinimapButton()
+    addon.SetupGuideWindow()
+    addon.RenderFrame()
+    addon.SetupArrow()
+    addon:CreateActiveItemFrame()
     addon.comms:Setup()
     addon.targeting:Setup()
-    if addon.settings.db.profile.enableTracker then addon.tracker:SetupTracker() end
+    if addon.talents then addon.talents:Setup() end
+    if addon.settings.db.profile.enableTracker then
+        addon.tracker:SetupTracker()
+    end
 
     addon.RXPG.LoadCachedGuides()
     addon.RXPG.LoadEmbeddedGuides()
@@ -422,8 +447,10 @@ function addon:OnInitialize()
     addon.isHidden = addon.settings.db.profile.hideGuideWindow
     addon.RXPFrame:SetShown(not addon.settings.db.profile.hideGuideWindow)
     addon.RXPFrame:SetScale(addon.settings.db.profile.windowScale)
-    addon.arrowFrame:SetSize(32 * addon.settings.db.profile.arrowScale, 32 * addon.settings.db.profile.arrowScale)
-    addon.arrowFrame.text:SetFont(addon.font, addon.settings.db.profile.arrowText, "OUTLINE")
+    addon.arrowFrame:SetSize(32 * addon.settings.db.profile.arrowScale,
+                             32 * addon.settings.db.profile.arrowScale)
+    addon.arrowFrame.text:SetFont(addon.font,
+                                  addon.settings.db.profile.arrowText, "OUTLINE")
     addon.activeItemFrame:SetScale(addon.settings.db.profile.activeItemsScale)
 end
 
@@ -433,7 +460,17 @@ function addon:OnEnable()
     local guide = addon.GetGuideTable(RXPCData.currentGuideGroup,
                                       RXPCData.currentGuideName)
     if not guide and addon.settings.db.profile.autoLoadStartingGuides then
-        guide = addon.defaultGuide
+        if addon.defaultGuideList then
+            local currentMap = C_Map.GetBestMapForUnit("player")
+            for zone, guideName in pairs(addon.defaultGuideList) do
+                if currentMap == zone or currentMap == addon.mapId[zone] then
+                    local group, name = string.match(guideName,
+                                                     "([^\\]+)%s*\\%s*([^\\]+)")
+                    guide = addon.GetGuideTable(group, name)
+                end
+            end
+        end
+        guide = guide or addon.defaultGuide
         if addon.game == "TBC" and
             (UnitLevel("player") == 58 and not guide.boost58) then
             guide = nil
@@ -447,9 +484,8 @@ function addon:OnEnable()
     end
     addon.RXPFrame.GenerateMenuTable()
 
-
     self:RegisterEvent("GET_ITEM_INFO_RECEIVED")
-    self:RegisterEvent("BAG_UPDATE_DELAYED")
+    self:RegisterEvent("BAG_UPDATE")
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:RegisterEvent("QUEST_TURNED_IN")
     -- self:RegisterEvent("SKILL_LINES_CHANGED")
@@ -505,44 +541,46 @@ function addon:OnEnable()
 
     if addon.game == "WOTLK" then
         local detectXPRateQueued = false
-        self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED", function (_, slot)
+        self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED", function(_, slot)
             if detectXPRateQueued then return end
 
             -- Abort if not chest/shoulders
             if slot ~= 3 and slot ~= 5 then return end
 
             detectXPRateQueued = true
-            C_Timer.After(3, function ()
+            C_Timer.After(3, function()
                 addon.settings:DetectXPRate()
                 detectXPRateQueued = false
             end)
         end)
     end
 
+    -- Only start update loop after everything initializes and enables
+    local updateFrame = CreateFrame("Frame")
+    updateFrame:SetScript("OnUpdate", addon.UpdateLoop)
 end
 
-
---Tracks if a player is on a loading screen and pauses the main update loop
---Some information is not available during zone transitions
+-- Tracks if a player is on a loading screen and pauses the main update loop
+-- Some information is not available during zone transitions
 function addon:PLAYER_ENTERING_WORLD(_, isInitialLogin)
     if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and RXPCData then
         RXPCData.GA = false
     end
     addon.hideArrow = false
     addon.updateMap = true
-    addon.isHidden = addon.settings and addon.settings.db.profile.hideGuideWindow or
-                                         not (addon.RXPFrame and addon.RXPFrame:IsShown())
+    addon.isHidden = addon.settings and
+                         addon.settings.db.profile.hideGuideWindow or
+                         not (addon.RXPFrame and addon.RXPFrame:IsShown())
 
     if isInitialLogin then
-        C_Timer.After(5, function ()
+        C_Timer.After(5, function()
             addon.settings:DetectXPRate()
+            addon.settings:CheckAddonCompatibility()
         end)
     end
 end
 
-function addon:PLAYER_LEAVING_WORLD()
-    addon.isHidden = true
-end
+function addon:PLAYER_LEAVING_WORLD() addon.isHidden = true end
 
 function addon:CALENDAR_UPDATE_EVENT_LIST()
     -- Required by .dmf
@@ -560,13 +598,19 @@ function addon:GET_ITEM_INFO_RECEIVED(_, itemNumber, success)
     end
 end
 
-function addon:BAG_UPDATE_DELAYED(...) addon.UpdateItemFrame() end
+function addon:BAG_UPDATE(...) addon.UpdateItemFrame() end
 
 function addon:PLAYER_REGEN_ENABLED(...) addon.UpdateItemFrame() end
 
 function addon:QUEST_TURNED_IN(_, questId, xpReward)
+    -- scryer/aldor quest
     if questId == 10551 or questId == 10552 then
-        C_Timer.After(1, function() addon.ReloadGuide() end) -- scryer/aldor quest
+        local mapId = addon.mapId['Shattrath City']
+        for _,point in pairs(addon.activeWaypoints) do
+            if point.zone == mapId then
+                return C_Timer.After(1, function() addon.ReloadGuide() end)
+            end
+        end
     end
 end
 
@@ -609,7 +653,7 @@ function addon:QUEST_DATA_LOAD_RESULT(_, questId, success)
 end
 
 function addon:GROUP_LEFT()
-    if not addon.settings.db.profile.hideInRaid or (RXPCData and RXPCData.GA) or (addon.guide and addon.guide.farm) then return end
+    if not addon.settings.db.profile.hideInRaid then return end
 
     if not addon.settings.db.profile.showEnabled then return end
 
@@ -629,7 +673,7 @@ function addon:NEW_PET_ADDED(...) addon.UpdateItemFrame() end
 function addon:TOYS_UPDATED(...) addon.UpdateItemFrame() end
 
 function addon.HideInRaid()
-    if not addon.settings.db.profile.hideInRaid or (RXPCData and RXPCData.GA) or (addon.guide and addon.guide.farm) then return end
+    if not addon.settings.db.profile.hideInRaid then return end
 
     if not UnitInRaid("player") then return end
 
@@ -655,7 +699,8 @@ function addon.UpdateScheduledTasks()
         if cTime > time then
             local group = addon.currentGuide.group
             local element = ref.element or ref
-            if group and RXPGuides[group] and element and RXPGuides[group][element.tag] then
+            if group and RXPGuides[group] and element and
+                RXPGuides[group][element.tag] then
                 RXPGuides[group][element.tag](ref)
                 addon.scheduledTasks[ref] = nil
             end
@@ -675,22 +720,17 @@ addon.updateInactiveQuest = {}
 
 addon.tickTimer = 0
 
-local updateFrame = CreateFrame("Frame")
-
-local eventType
 local updateTick = 0
-local updateStart = 0
-
 local skip = 0
-updateFrame:SetScript("OnUpdate", function(self, diff)
 
+function addon:UpdateLoop(diff)
     updateTick = updateTick + diff
+    -- TODO
     if addon.isHidden then
         return
-    elseif updateTick > (0.05+math.random()/128) then
+    elseif updateTick > (0.05 + math.random() / 128) then
         local currentTime = GetTime()
         updateTick = 0
-        updateStart = currentTime
         local activeQuestUpdate = 0
         skip = skip + 1
         local event = ""
@@ -700,7 +740,7 @@ updateFrame:SetScript("OnUpdate", function(self, diff)
                 func(ref)
                 activeQuestUpdate = activeQuestUpdate + 1
                 addon.updateActiveQuest[ref] = nil
-                --print('f',ref.element.step.index,math.random())
+                -- print('f',ref.element.step.index,math.random())
             end
             if activeQuestUpdate > 0 then event = event .. "/activeQ" end
         end
@@ -761,41 +801,38 @@ updateFrame:SetScript("OnUpdate", function(self, diff)
             end
         elseif skip % 4 == 0 then
             addon.UpdateGotoSteps()
-            --event = event .. "/updateGoto"
+            -- event = event .. "/updateGoto"
         elseif skip % 4 == 3 then
             addon.UpdateScheduledTasks()
         elseif skip % 16 == 1 then
             activeQuestUpdate = 0
             local deletedIndexes = {}
-            for i,ref in ipairs(addon.updateInactiveQuest) do
+            for i, ref in ipairs(addon.updateInactiveQuest) do
                 activeQuestUpdate = activeQuestUpdate + 1
                 if activeQuestUpdate > 3 then
                     break
                 else
-                    --print('ok',ref.element.step.index,ref.element.requestFromServer)
+                    -- print('ok',ref.element.step.index,ref.element.requestFromServer)
                     addon.UpdateQuestCompletionData(ref)
-                    table.insert(deletedIndexes,i)
+                    table.insert(deletedIndexes, i)
                 end
             end
-            for i = #deletedIndexes,1,-1 do
+            for i = #deletedIndexes, 1, -1 do
                 local element = deletedIndexes[i]
-                table.remove(addon.updateInactiveQuest,element)
-                --print('r'..element)
+                table.remove(addon.updateInactiveQuest, element)
+                -- print('r'..element)
             end
             if activeQuestUpdate > 0 then
                 event = event .. "/inactiveQ"
             end
         end
-        --[[if event ~= "" then
-            eventType = event
-            print(event)
-        end]]
     end
-end)
+end
 
 function addon.HardcoreToggle()
     if addon.game == "CLASSIC" then
-        addon.settings.db.profile.hardcore = not addon.settings.db.profile.hardcore
+        addon.settings.db.profile.hardcore =
+            not addon.settings.db.profile.hardcore
         addon.RenderFrame()
     end
 end
@@ -831,11 +868,11 @@ end
 
 function addon.PhaseCheck(phase)
 
-    if type(phase) == "table" then
-        phase = phase.phase
-    end
+    if type(phase) == "table" then phase = phase.phase end
 
-    if phase and RXPCData and RXPCData.phase then
+    local currentPhase = addon.settings.db.profile.phase or 6
+
+    if phase and currentPhase then
         local pmin, pmax
         pmin, pmax = phase:match("(%d+)%-(%d+)")
         if pmax then
@@ -845,7 +882,7 @@ function addon.PhaseCheck(phase)
             pmin = tonumber(phase)
             pmax = 0xffff
         end
-        if pmin and RXPCData.phase >= pmin and RXPCData.phase <= pmax then
+        if pmin and currentPhase >= pmin and currentPhase <= pmax then
             return true
         else
             return false
@@ -860,12 +897,20 @@ function addon.IsStepShown(step)
             (addon.settings.db.profile.northrendLM or not step.questguide) and
              addon.AldorScryerCheck(step) and
              addon.PhaseCheck(step) and addon.HardcoreCheck(step) and
-             addon.SeasonCheck(step) and addon.XpRateCheck(step) and addon.FreshAccountCheck(step)
+             addon.SeasonCheck(step) and addon.XpRateCheck(step) and addon.FreshAccountCheck(step) and addon.GroupCheck(step)
+end
+
+function addon.GroupCheck(step)
+    if (not addon.settings.db.profile.enableGroupQuests and step.group) or (addon.settings.db.profile.enableGroupQuests and step.solo) then
+        return false
+    end
+    return true
 end
 
 function addon.SeasonCheck(step)
-    if addon.settings.db.profile.SoM and step.era or step.som and not addon.settings.db.profile.SoM or
-    addon.settings.db.profile.SoM and addon.settings.db.profile.phase > 2 and step["era/som"] then
+    if addon.settings.db.profile.SoM and step.era or step.som and
+        not addon.settings.db.profile.SoM or addon.settings.db.profile.SoM and
+        addon.settings.db.profile.phase > 2 and step["era/som"] then
         return false
     end
     return true
@@ -879,9 +924,10 @@ end
 
 function addon.XpRateCheck(step)
     if step.xprate and addon.settings.db.profile.enableXpStepSkipping then
-        local xpmin,xpmax = 1,0xfff
+        local xpmin, xpmax = 1, 0xfff
 
-        step.xprate:gsub("^([<>]?)%s*(%d+%.?%d*)%-?(%d*%.?%d*)",function(op,arg1,arg2)
+        step.xprate:gsub("^([<>]?)%s*(%d+%.?%d*)%-?(%d*%.?%d*)",
+                         function(op, arg1, arg2)
             if op == "<" then
                 xpmin = 0
                 xpmax = tonumber(arg1) - 1e-4
@@ -894,9 +940,8 @@ function addon.XpRateCheck(step)
             end
         end)
 
-        if addon.settings.db.profile.xprate < xpmin or addon.settings.db.profile.xprate > xpmax then
-            return false
-        end
+        if addon.settings.db.profile.xprate < xpmin or
+            addon.settings.db.profile.xprate > xpmax then return false end
     end
 
     return true
@@ -931,16 +976,11 @@ function addon.FreshAccountCheck(step)
 end
 
 function addon.LevelCheck(step)
-    if not addon.settings.db.profile.enableXpStepSkipping then
-        return true
-    end
+    if not addon.settings.db.profile.enableXpStepSkipping then return true end
 
     local level = UnitLevel("player")
     local maxLevel = tonumber(step.maxlevel) or 1000
-    if level <= maxLevel then
-        return true
-    end
+    if level <= maxLevel then return true end
 end
 
-
-RXP = addon --debug purposes
+RXP = addon -- debug purposes

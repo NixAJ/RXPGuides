@@ -85,6 +85,8 @@ function addon.comms:PLAYER_LEVEL_UP(_, level)
             levelData.timestamp.finished then
             s = levelData.timestamp.finished - levelData.timestamp.started
 
+            if not s then return end
+
             msg = self.BuildNotification(
                       L("I just leveled from %d to %d in %s"), level - 1, level,
                       addon.comms:PrettyPrintTime(s))
@@ -185,7 +187,7 @@ function addon.comms:AnnounceSelf(command)
         command = command,
         player = {
             name = playerName,
-            class = select(2, UnitClass("player")),
+            class = addon.player.class,
             level = UnitLevel("player"),
             xpPercentage = floor(100 * UnitXP("player") / UnitXPMax("player"))
         },
@@ -404,7 +406,7 @@ function addon.comms.OpenBugReport(stepNumber)
     end
 
     local character = fmt("%s / %s / level %d (%.2f%%)", UnitRace("player"),
-                          select(1, UnitClass("player")), UnitLevel("player"),
+                          addon.player.class, UnitLevel("player"),
                           UnitXP("player") / UnitXPMax("player") * 100)
 
     local position = C_Map.GetPlayerMapPosition(
@@ -636,4 +638,20 @@ function addon.comms:PrettyPrintTime(s)
     end
 
     return formattedString
+end
+
+function addon.comms:ConfirmChoice(lookup, prompt, confirmCallback, payload)
+
+    StaticPopupDialogs[lookup] = {
+        text = prompt,
+        button1 = _G.YES,
+        button2 = _G.NO,
+        OnAccept = function() confirmCallback(payload) end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        showAlert = 1
+    }
+
+    _G.StaticPopup_Show(lookup)
 end
