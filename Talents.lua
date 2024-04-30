@@ -41,6 +41,8 @@ addon.talents.petGuides = {
 
 local compatible = true
 local indexLookup = {}
+local activeIndices = {}
+local levelsForIndex = {}
 local talentTooltips = {
     hooked = false,
     data = {},
@@ -141,10 +143,7 @@ local function buildTalentGuidesMenu()
     tinsert(menu, {
         text = _G.GAMEOPTIONS_MENU,
         notCheckable = 1,
-        func = function()
-            _G.InterfaceOptionsFrame_OpenToCategory(addon.RXPOptions)
-            _G.InterfaceOptionsFrame_OpenToCategory(addon.RXPOptions)
-        end
+        func = function() addon.settings.OpenSettings() end
     })
 
     tinsert(menu, {
@@ -161,16 +160,16 @@ function addon.talents:IsSupported()
 end
 
 function addon.talents:Setup()
-    if not addon.settings.db.profile.enableTalentGuides then return end
+    if not addon.settings.profile.enableTalentGuides then return end
 
     if not self:IsSupported() then return end
 
     self:RegisterEvent("ADDON_LOADED")
 
-    self:UpdateSelectedGuide(addon.settings.db.profile.activeTalentGuide)
+    self:UpdateSelectedGuide(addon.settings.profile.activeTalentGuide)
 
     if tonumber(GetCVar("previewTalents")) == 0 and addon.gameVersion > 30000 and
-        addon.settings.db.profile.previewTalents then
+        addon.settings.profile.previewTalents then
         -- Talents are enabled in RXP, so match client
         -- This only lasts per session, does not persist in-game setting
         SetCVar("previewTalents", 1)
@@ -405,11 +404,15 @@ local function learnClassicTalent(payload)
     if addon.gameVersion > 20000 then return end
 
     local tab, talentIndex, name = unpack(payload)
-    if LearnTalent(tab, talentIndex) then
+    local result = LearnTalent(tab, talentIndex)
+
+    if result then
         addon.comms.PrettyPrint("%s - %s", _G.TRADE_SKILLS_LEARNED_TAB, name)
-    else
-        addon.error(fmt("%s - %s", _G.ERR_TALENT_FAILED_UNKNOWN, name))
+        -- else
+        -- addon.error(fmt("%s - %s", _G.ERR_TALENT_FAILED_UNKNOWN, name))
     end
+
+    return result
 end
 
 function addon.talents.functions.talent(element, validate)
@@ -469,7 +472,9 @@ function addon.talents.functions.talent(element, validate)
                 addon.comms:ConfirmChoice("RXPTalentPrompt", prompt,
                                           learnClassicTalent, d)
 
-            elseif addon.settings.db.profile.previewTalents then
+                -- Stop as soon as first learning prompt, not a blocking dialog
+                return -1
+            elseif addon.settings.profile.previewTalents then
                 local before = GetGroupPreviewTalentPointsSpent()
                 AddPreviewTalentPoints(talentData.tab, talentIndex, 1)
 
@@ -549,7 +554,7 @@ function addon.talents.functions.pettalent(element, validate)
 
         -- TODO handle off-plan talents
         if name and previewRankOrRank < talentData.rank then
-            if addon.settings.db.profile.previewTalents then
+            if addon.settings.profile.previewTalents then
                 local before = GetGroupPreviewTalentPointsSpent(true, 1)
                 AddPreviewTalentPoints(talentData.tab, talentIndex, 1, true,
                                        PlayerTalentFrame.talentGroup)
@@ -586,7 +591,7 @@ function addon.talents:GetCurrentGuide()
         return self.petGuides[GetPetTalentTree()]
     else
         -- TODO automatically select talent guide for chosen spec, harder to do without DB
-        return self.guides[addon.settings.db.profile.activeTalentGuide]
+        return self.guides[addon.settings.profile.activeTalentGuide]
     end
 end
 
@@ -602,7 +607,7 @@ function addon.talents:UpdateSelectedGuide(key)
         return
     end
 
-    addon.settings.db.profile.activeTalentGuide = key
+    addon.settings.profile.activeTalentGuide = key
 
     return true
 end
@@ -618,7 +623,7 @@ talentTooltips.updateFunc = function(self)
     GameTooltip:Show()
 end
 
-local function DrawTalentLevel(talentIndex, playerLevel, upcomingLevel)
+local function DrawTalentLevels(talentIndex, numbers)
     local ht = talentTooltips.highlights[talentIndex]
 
     if not ht then return end
@@ -628,7 +633,7 @@ local function DrawTalentLevel(talentIndex, playerLevel, upcomingLevel)
                                      _G["PlayerTalentFrameTalent" .. talentIndex],
                                      BackdropTemplate)
 
-        ht.levelHeader:SetPoint("TOPLEFT", ht, 2, 0)
+        ht.levelHeader:SetPoint("TOPLEFT", ht, 0, 0)
         ht.levelHeader.text = ht.levelHeader:CreateFontString(nil, "OVERLAY")
 
         ht.levelHeader.text:ClearAllPoints()
@@ -638,33 +643,23 @@ local function DrawTalentLevel(talentIndex, playerLevel, upcomingLevel)
 
         -- TODO specific text color setting?
         ht.levelHeader.text:SetTextColor(unpack(addon.activeTheme.textColor))
-        ht.levelHeader.text:SetFont(addon.font, 10, "")
+        ht.levelHeader.text:SetFont(addon.font, 10, "OUTLINE")
     end
 
-    -- Handle multiple-levels
-    local numbers = {upcomingLevel}
-
-    local numberText = ht.levelHeader.text:GetText()
-
-    if numberText then
-        local c
-        for _, currentNumber in ipairs(strsplittable(",", numberText)) do
-            c = tonumber(currentNumber)
-
-            -- Don't preserve old numbers
-            if c > playerLevel and c ~= upcomingLevel then
-                tinsert(numbers, c)
-            end
-        end
+    -- If 5 levels of preview, overlaps with nearby
+    if #numbers == 5 then
+        ht.levelHeader.text:SetFont(addon.font, 8, "OUTLINE")
+        ht.levelHeader:SetPoint("TOPLEFT", ht, -3, 0)
+    else
+        ht.levelHeader.text:SetFont(addon.font, 10, "OUTLINE")
+        ht.levelHeader:SetPoint("TOPLEFT", ht, 0, 0)
     end
 
-    tsort(numbers)
-    local newText = strjoin(',', unpack(numbers))
-
-    if not ht.levelHeader:IsShown() then ht.levelHeader:Show() end
+    -- Ensure single number ends up as a string
+    local newText = '' .. strjoin(',', unpack(numbers))
 
     -- No changes, prevent uneeded UI calls
-    if numberText == newText then return end
+    if ht.levelHeader.text:GetText() == newText then return end
 
     ht.levelHeader.text:SetText(newText)
     ht.levelHeader:SetSize(ht.levelHeader.text:GetStringWidth() + 10, 17)
@@ -686,7 +681,7 @@ function addon.talents:DrawTalents()
 
     if not indexLookup['player'] then self:BuildIndexLookup() end
 
-    if not addon.settings.db.profile.hightlightTalentPlan then
+    if not addon.settings.profile.hightlightTalentPlan then
         -- If disabled, cleanup old draws for dynamic settings
         local ht
         for i in pairs(talentTooltips.highlights) do
@@ -695,6 +690,7 @@ function addon.talents:DrawTalents()
 
             if ht.levelHeader and ht.levelHeader:IsShown() then
                 ht.levelHeader:Hide()
+                ht.levelHeader.text:SetText(nil)
             end
         end
 
@@ -702,76 +698,105 @@ function addon.talents:DrawTalents()
     end
 
     local currentTab = PanelTemplates_GetSelectedTab(PlayerTalentFrame)
+    local remainingPoints, levelStep, talentIndex
+
+    if GetUnspentTalentPoints then
+        remainingPoints = GetUnspentTalentPoints() -
+                              GetGroupPreviewTalentPointsSpent()
+    else
+        remainingPoints = UnitCharacterPoints("player")
+    end
 
     local playerLevel = UnitLevel("player")
     local advancedWarning = playerLevel +
-                                addon.settings.db.profile.upcomingTalentCount
-    local levelStep, talentIndex
-
+                                addon.settings.profile.upcomingTalentCount
     wipe(talentTooltips.data)
 
-    for upcomingLevel = playerLevel + 1, advancedWarning do
+    -- Track state better than with Blizz frame re-use
+    wipe(activeIndices)
+    wipe(levelsForIndex)
 
-        levelStep = guide.steps[upcomingLevel - guide.minLevel + 1]
+    -- Create highlight frames and set data objects for later processing
+    for upcomingTalent = (playerLevel + 1 - remainingPoints), advancedWarning do
 
-        if not levelStep then return end
+        levelStep = guide.steps[upcomingTalent - guide.minLevel + 1]
 
-        for _, element in ipairs(levelStep.elements) do
-            for _, talentData in ipairs(element.talent) do
-                talentIndex =
-                    indexLookup['player'][talentData.tab][talentData.tier][talentData.column]
+        if levelStep then
 
-                if currentTab == talentData.tab then
-                    talentTooltips.data[talentIndex] =
-                        talentTooltips.data[talentIndex] or
-                            fmt("%s - %s", addon.title, guide.name)
+            for _, element in ipairs(levelStep.elements) do
+                for _, talentData in ipairs(element.talent) do
 
-                    talentTooltips.data[talentIndex] = fmt(
-                                                           "\n%s\n%s%s: %s %d|r",
-                                                           talentTooltips.data[talentIndex],
-                                                           addon.colors.tooltip,
-                                                           _G.TRADE_SKILLS_LEARNED_TAB,
-                                                           _G.LEVEL,
-                                                           upcomingLevel)
+                    talentIndex =
+                        indexLookup['player'][talentData.tab][talentData.tier][talentData.column]
 
-                    -- TODO Pre-seed tooltip to prevent delay
+                    if currentTab == talentData.tab then
+                        activeIndices[talentIndex] = talentData.tab
 
-                    if talentTooltips.highlights[talentIndex] then
-                        setHighlightColor(talentIndex,
-                                          upcomingLevel - playerLevel)
+                        talentTooltips.data[talentIndex] =
+                            talentTooltips.data[talentIndex] or
+                                fmt("\n%s - %s", addon.title, guide.name)
 
-                        DrawTalentLevel(talentIndex, playerLevel, upcomingLevel)
-                        talentTooltips.highlights[talentIndex]:Show()
-                    else
-                        local ht =
-                            _G["PlayerTalentFrameTalent" .. talentIndex]:CreateTexture(
-                                "$parent_LevelPreview", "BORDER")
+                        talentTooltips.data[talentIndex] = fmt(
+                                                               "%s\n%s%s: %s %d|r",
+                                                               talentTooltips.data[talentIndex],
+                                                               addon.colors
+                                                                   .tooltip,
+                                                               _G.TRADE_SKILLS_LEARNED_TAB,
+                                                               _G.LEVEL,
+                                                               upcomingTalent)
 
-                        ht:SetTexture("Interface/Buttons/ButtonHilight-Square")
-                        ht:SetBlendMode("ADD")
-                        ht:SetAllPoints(_G["PlayerTalentFrameTalent" ..
-                                            talentIndex .. "Slot"])
+                        -- TODO Pre-seed tooltip to prevent delay
 
-                        talentTooltips.highlights[talentIndex] = ht
+                        if not talentTooltips.highlights[talentIndex] then
+                            local ht = _G["PlayerTalentFrameTalent" ..
+                                           talentIndex]:CreateTexture(
+                                           "$parent_LevelPreview", "BORDER")
 
-                        setHighlightColor(talentIndex,
-                                          upcomingLevel - playerLevel)
-                        DrawTalentLevel(talentIndex, playerLevel, upcomingLevel)
-                    end
-                else
-                    -- Reset highlights on non-active tabs
-                    if talentTooltips.highlights[talentIndex] then
-                        local ht = talentTooltips.highlights[talentIndex]
-                        if ht:IsShown() then ht:Hide() end
+                            ht:SetTexture(
+                                "Interface/Buttons/ButtonHilight-Square")
+                            ht:SetBlendMode("ADD")
+                            ht:SetAllPoints(
+                                _G["PlayerTalentFrameTalent" .. talentIndex ..
+                                    "Slot"])
 
-                        if ht.levelHeader and ht.levelHeader:IsShown() then
-                            ht.levelHeader:Hide()
+                            talentTooltips.highlights[talentIndex] = ht
                         end
+
+                        setHighlightColor(talentIndex,
+                                          upcomingTalent - playerLevel)
+
+                        if levelsForIndex[talentIndex] then
+                            tinsert(levelsForIndex[talentIndex], upcomingTalent)
+                        else
+                            levelsForIndex[talentIndex] = {upcomingTalent}
+                        end
+
                     end
-                end
-            end
-        end
+
+                end -- ipairs(element.talent)
+            end -- ipairs(levelStep.elements)
+
+        end -- if levelStep
     end
+
+    -- Ensure all highlights and levelHeaders are shown/hidden as applicable
+    for index, ht in pairs(talentTooltips.highlights) do
+
+        if activeIndices[index] and activeIndices[index] == currentTab then
+            -- Set levelHeader data from array data
+            DrawTalentLevels(index, levelsForIndex[index])
+
+            if not ht:IsShown() then ht:Show() end
+            if not ht.levelHeader:IsShown() then
+                ht.levelHeader:Show()
+            end
+        else
+            if ht:IsShown() then ht:Hide() end
+            if ht.levelHeader:IsShown() then ht.levelHeader:Hide() end
+        end
+
+    end
+
 end
 
 function addon.talents:BuildIndexLookup()
@@ -815,7 +840,7 @@ function addon.talents:ProcessTalents(validate)
 
     if not guide then return end
 
-    if validate and addon.settings.db.profile.debug then
+    if validate and addon.settings.profile.debug then
         addon.comms.PrettyPrint("Validating %s", guide.displayname)
     end
 
@@ -876,7 +901,7 @@ function addon.talents:ProcessTalents(validate)
                 -- Exit processing if error found
                 -- Rely on in-tag-function error output for user communication
                 -- Explicitly require false, accept nil as truthy
-                if result == false then
+                if result == false or result == -1 then
                     -- print("Aborting step processing", result)
                     return
                 end
@@ -898,7 +923,7 @@ function addon.talents:ProcessPetTalents(validate)
 
     if not guide or not guide.pet then return end
 
-    if validate and addon.settings.db.profile.debug then
+    if validate and addon.settings.profile.debug then
         addon.comms.PrettyPrint("Validating %s", guide.displayname)
     end
 
@@ -944,7 +969,7 @@ function addon.talents:ProcessPetTalents(validate)
                 end
 
                 if result == false then
-                    if addon.settings.db.profile.debug then
+                    if addon.settings.profile.debug then
                         addon.comms.PrettyPrint(
                             "Aborting processing at step %d", stepNum)
                     end
@@ -957,3 +982,5 @@ function addon.talents:ProcessPetTalents(validate)
     end
 
 end
+
+_G.RXPGuides.talents = {RegisterGuide = addon.talents.RegisterGuide}

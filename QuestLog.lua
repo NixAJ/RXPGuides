@@ -7,8 +7,20 @@ local GetNumQuests = C_QuestLog.GetNumQuestLogEntries or
 local GetQuestLogTitle = C_QuestLog.GetInfo or _G.GetQuestLogTitle
 
 local L = addon.locale.Get
+local maxQuests = 25
+if addon.game == "CLASSIC" then
+    maxQuests = 20
+end
+
+local lastIndex
 
 function addon.UpdateQuestButton(index)
+    if type(index) ~= 'number' or index > maxQuests then
+        index = lastIndex or
+            _G.GetQuestLogSelection and _G.GetQuestLogSelection()
+    end
+    --print(maxQuests)
+    if not index then return end
     local button = addon.questLogButton
     local anchor = _G.QuestLogExDetailScrollChildFrame or
                        _G.QuestLogDetailScrollChildFrame
@@ -43,27 +55,37 @@ function addon.UpdateQuestButton(index)
     local questLogTitleText, level, questTag, isHeader, isCollapsed, isComplete,
           frequency, questID = _G.GetQuestLogTitle(index);
     local showButton
-    local function GetGuideList(list)
+    local function GetGuideList(list,qid)
         -- local guides = {}
         local output = ""
         local groups = {}
         local guides = {}
         for _, entry in pairs(list) do
-            if addon.IsGuideActive(entry.guide) and
-                addon.IsStepShown(entry.step) then
+            local step = entry.step
+            if not entry.guide.lowPrio and
+                 addon.IsGuideActive(entry.guide) and
+                  addon.IsStepShown(step,"GroupCheck") and
+                  (step.group or addon.stepLogic.GroupCheck(step)) then
+                    --print(entry.guide.name,entry.guide.lowPrio)
                 if not guides[entry.group] then
                     guides[entry.group] = {}
                     table.insert(groups, entry.group)
                 end
-                guides[entry.group][entry.name] = true
-
+                local solo = step.solo or not step.group
+                local grpTbl = guides[entry.group]
+                grpTbl[entry.name] = grpTbl[entry.name] or solo
+                --print(entry.name,entry.group,solo,qid)
             end
         end
         table.sort(groups)
         for _, group in ipairs(groups) do
             local guideList = {}
-            for guide in pairs(guides[group]) do
-                table.insert(guideList, guide)
+            for guide,solo in pairs(guides[group]) do
+                local suffix = ""
+                if not solo then
+                    suffix = L" (Group)"
+                end
+                table.insert(guideList, guide .. suffix)
             end
             table.sort(guideList)
             output = output .. "\n   " .. group .. ":"
@@ -78,7 +100,7 @@ function addon.UpdateQuestButton(index)
         local tooltip = ""
         local separator = ""
         if addon.pickUpList[questID] then
-            local pickUpList = GetGuideList(addon.pickUpList[questID])
+            local pickUpList = GetGuideList(addon.pickUpList[questID],questID)
             if pickUpList ~= "" then
                 tooltip = format("%s%s%s%s|r%s", tooltip, addon.icons.accept,
                                  addon.colors.tooltip,
@@ -88,7 +110,7 @@ function addon.UpdateQuestButton(index)
             end
         end
         if addon.turnInList[questID] then
-            local turnInList = GetGuideList(addon.turnInList[questID])
+            local turnInList = GetGuideList(addon.turnInList[questID],questID)
             if turnInList ~= "" then
                 tooltip = format("%s%s%s%s%s|r%s", tooltip, separator,
                                  addon.icons.turnin, addon.colors.tooltip,
@@ -100,6 +122,7 @@ function addon.UpdateQuestButton(index)
     end
 
     if showButton then
+        lastIndex = index
         button:Show()
     else
         button:Hide()
@@ -111,74 +134,163 @@ if _G.QuestLog_SetSelection then
 end
 
 -- Debug function, helps finding out quest log problems on a given guide
-function addon.GetQuestLog(QL, LT)
+--Returns the expected quest log and a list of quest that will be turend in later
+--This will run from the 1st guide to the point where you are now, counting the accept/turn in steps in order to determine the quest log state
+--After determining the expected quest log, it will run from the current step forward, counting existing turn in steps for the quests in your quest log currently
 
+--Guides have a lot of optional steps of the like: Turn in this quest if you have completed it, otherwise do it later
+
+function addon.GetExpectedQuestLog()
     local guide = addon.currentGuide
-    local name = RXPCData.currentGuideName
-    local group = addon.RXPG[RXPCData.currentGuideGroup]
-    QL = QL or {}
-    LT = LT or {}
+    local startGuide
+    local currentStep = RXPCData.currentStep
+    if guide.standalone then
+        startGuide = guide
+    else
+        local group = guide.group
+        local name = addon.guideList[group].defaultGuide_
+        startGuide = addon:FetchGuide(group,name)
+    end
+    startGuide = addon.ProcessGuideTable(startGuide)
+    if not (startGuide and startGuide.steps) then return {},{} end
+    --print(group,name)
+    local qLog = addon.GetQuestLog(nil,nil,startGuide,true,guide.key,currentStep)
+    if not qLog or not next(qLog) then
+        return {},{}
+    end
+    local futureTurnIns = {}
+
+    local function ProcessStep(step,guide)
+        for _,element in ipairs(step.elements) do
+            if element.tag and (element.tag:find("turnin")) then
+                local ids = element.ids or {element.questId}
+                for _,id in pairs(ids) do
+                    if addon.IsOnQuest(id) then
+                        futureTurnIns[id] = guide.key
+                    end
+                end
+            end
+        end
+    end
+    for i = currentStep,#guide.steps do
+        local step = guide.steps[i]
+        if step then
+            ProcessStep(step,guide)
+        end
+    end
+
+    local nextGroup,nextName,nextGuide
+
+    repeat
+        nextGroup,nextName = addon.functions.next(false,guide)
+        nextGuide = addon:FetchGuide(nextGroup,nextName)
+        if nextGuide and nextGuide.steps then
+            if guide.key ~= nextGuide.key then
+                nextGuide = addon.ProcessGuideTable(nextGuide)
+                guide = nextGuide
+                for _,step in ipairs(guide.steps) do
+                    ProcessStep(step,guide)
+                end
+            else
+                nextGuide = nil
+            end
+        end
+    until not nextGuide
+
+    return qLog,futureTurnIns
+end
+
+function addon.GetQuestLog(QL, LT, guide, silent, stopGuide, stopStep)
+    if not (QL and LT) then
+        QL = {}
+        LT = {}
+        guide = guide or addon.currentGuide
+    end
+    local name = guide.name
+    local group = addon.functions
     local qError
     local eStep
-    local maxQuests
-    if addon.game == "CLASSIC" then
-        maxQuests = 20
-    else
-        maxQuests = 25
-    end
-    addon.next = group.next
-
-    if (addon.settings.db.profile.SoM and guide.era or
-        not addon.settings.db.profile.SoM and guide.som or
-        addon.settings.db.profile.SoM and addon.settings.db.profile.phase > 2 and
-        guide["era/som"]) or not guide then return end
-    for ns, step in ipairs(guide.steps) do
+    local stop
+    local lastQuestAccepted
+    if not (guide and addon.stepLogic.SeasonCheck(guide)) then return end
+    for _, step in ipairs(guide.steps) do
+        local remove = tonumber(step.qremove)
+        if remove then
+            QL[remove] = nil
+        end
         for en, element in pairs(step.elements) do
-            if element.tag == "accept" then
-                QL[element.questId] = element.text or tostring(element.questId)
-                LT[element.questId] = false
-            elseif element.tag == "turnin" or element.tag == "abandon" then
-                if LT[element.questId] == nil and not element.skipIfMissing then
-                    local t = element.questId .. "/" ..
-                                  (element.text or tostring(element.questId)) ..
-                                  "/" .. guide.name
-                    LT[element.questId] = t:gsub("^[Tt]urn in", "")
+            local ids
+            if element.tag == "accept" or element.tag == "daily" then
+                local id = element.questId or element.ids[1]
+                id = addon.GetQuestId(id,guide)
+                local qname = element.text or tostring(id)
+                LT[id] = false
+                qname = qname:gsub("^Accept ", "")
+                lastQuestAccepted = qname
+                QL[id] = qname
+            elseif element.tag and (element.tag:find("turnin") or element.tag == "abandon") then
+                ids = element.ids or {element.questId}
+                for _,id in pairs(ids) do
+                    id = addon.GetQuestId(id,guide)
+                    if LT[id] == nil and not element.skipIfMissing then
+                        local t = id .. "/" ..
+                                    (element.text or tostring(id)) ..
+                                    "/" .. guide.name
+                        LT[id] = t:gsub("^[Tt]urn in", "")
+                    end
+                    QL[id] = nil
                 end
-                QL[element.questId] = nil
             end
         end
         local nQuests = 0
         for n in pairs(QL) do nQuests = nQuests + 1 end
-        if nQuests > maxQuests then
+        if (not silent and (nQuests > maxQuests or step.stop)) or (stopGuide == guide.key and stopStep == step.index) then
             qError = true
             eStep = step
+            stop = step.stop
             break
         end
     end
-    local n = 0
-    print("\n\nGuide: " .. name)
-    for i, v in pairs(QL) do
-        print(format("%s (%d)", v:gsub("^Accept ", ""), i))
-        n = n + 1
-    end
-    print("QuestLog length: " .. n)
 
+    if not silent then
+        local n = 0
+        print("\n\nGuide: " .. name)
+        for i, v in pairs(QL) do
+            print(format("%s (%d)", v:gsub("^Accept ", ""), i))
+            n = n + 1
+        end
+        print("QuestLog length: " .. n)
+    end
     if qError then
-        print(format("Error at step %d: Quest log length greater than " ..
-                         maxQuests, eStep.index))
+        if not silent then
+            if stop then
+                print(format("Stopped at step %d", eStep.index or 0))
+            else
+                print(format("Error at step %d: Quest log length greater than " ..
+                                maxQuests, eStep.index or 0))
+                print('Last Quest Accepted: ',lastQuestAccepted)
+            end
+        end
     else
-        if group.next() then
-            return addon.GetQuestLog(QL, LT)
-        elseif eStep then
-            print(format("Error at step %d", eStep.index))
+        local nextGroup,nextName = group.next(false,guide)
+        local nextGuide = addon:FetchGuide(nextGroup,nextName)
+        if nextGuide and nextGuide.steps then
+            nextGuide = addon.ProcessGuideTable(nextGuide)
+            if guide.key ~= nextGuide.key then
+                return addon.GetQuestLog(QL, LT, nextGuide, silent, stopGuide, stopStep)
+            end
+        elseif eStep and not silent then
+            print(format("Error at step %d (%s)", eStep.index or 0,guide.name))
         end
     end
 
-    local prefix = "\n\nQuests missing an accept step:\n"
-    for _, v in pairs(LT) do
-        if type(v) == "string" and not v:find("A Donation of") then
-            print(prefix .. v)
-            prefix = ""
+    if not silent then
+        local prefix = "\n\nQuests missing an accept step:\n"
+        for _, v in pairs(LT) do
+            if type(v) == "string" and not v:find("A Donation of") then
+                print(prefix .. v)
+                prefix = ""
+            end
         end
     end
     return QL
@@ -199,12 +311,23 @@ local function SetItemTooltip(tooltip, tooltipInfo)
     local guideList = questId and addon.turnInList[questId]
 
     if guideList and #guideList > 0 then
-        local prefix = "Item used in guide:\n"
+        local activeGuides = {}
+        local prefix = L"Item used in guide:\n"
         for _, entry in ipairs(guideList) do
-            if addon.IsGuideActive(entry.guide) and
-                addon.IsStepShown(entry.step) then
-                tooltip:AddLine(prefix .. addon.icons.turnin .. entry.name)
-                prefix = ""
+            local step = entry.step
+            local guide = entry.guide
+            if addon.IsGuideActive(guide) and not guide.lowPrio and
+                addon.IsStepShown(step,"GroupCheck") then
+                    local groupText = ""
+                    if step.group then
+                        groupText = L" (Group)"
+                    end
+                local guideName = prefix .. addon.icons.turnin .. entry.name .. groupText
+                if not activeGuides[guideName] then
+                    activeGuides[guideName] = true
+                    tooltip:AddLine(guideName)
+                    prefix = ""
+                end
             end
         end
     end
@@ -259,15 +382,7 @@ function addon.GetOrphanedQuests()
         return orphans
     end
 
-    -- Green at level - green, grey below
-    local greyBuffer
-
-    if _G.UnitQuestTrivialLevelRange then
-        greyBuffer = UnitLevel("player") -
-                         _G.UnitQuestTrivialLevelRange("player") - 1
-    else
-        greyBuffer = UnitLevel("player") - _G.GetQuestGreenRange() - 1
-    end
+    local greyBuffer = UnitLevel("player") - 7
 
     local questData, orphanData
     local isTooLow, isPartOfGuide
@@ -303,7 +418,7 @@ function addon.GetOrphanedQuests()
             end
 
             if (isTooLow or not isPartOfGuide) and not questData.isComplete then
-                if addon.settings.db.profile.debug then
+                if addon.settings.profile.debug then
                     addon.comms.PrettyPrint("Orphaned quest found, %s",
                                             questData.questLogTitleText)
                 end

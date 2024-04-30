@@ -1,11 +1,11 @@
-## Interface: 30401
+## Interface: 30403
 ## Title: RestedXP Guides
 ## Notes: In-game leveling guides
 ## Notes-zhCN: TODO
 ## Author: RestedXP
 ## Version: @project-version@
-## OptionalDeps: Questie, RestedXP_Themes
-## SavedVariables: RXPData, RXPDB
+## OptionalDeps: Questie, RXPGuides_Themes
+## SavedVariables: RXPData, RXPDB, RXPSettings
 ## SavedVariablesPerCharacter: RXPCData, RXPCTrackingData, RXPCComms, RXPCSettings
 ## X-Curse-Project-ID: 486246
 
@@ -25,6 +25,7 @@ LevelingTracker.lua
 Timers.lua
 Communications.lua
 Targeting.lua
+Tips.lua
 
 DB/wotlk.xml
 

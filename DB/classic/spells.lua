@@ -1,5 +1,6 @@
 local _, addon = ...
 
+if addon.game ~= "CLASSIC" then return end
 C_Spell.RequestLoadSpellData(2575) -- mining
 C_Spell.RequestLoadSpellData(2368) -- herbalism
 
@@ -238,7 +239,7 @@ s["PALADIN"] = {
     },
     [6] = {
         639, -- Holy Light R2
-        3127, -- parry
+        3128, -- parry
         498 -- Divine protection
     },
     [8] = {
@@ -725,7 +726,7 @@ s["WARRIOR"] = {
     [4] = {
         100, -- charge
         772, -- rend
-        3127 -- parry
+        3128 -- parry
     },
     [8] = {
         1715, -- hamstring
@@ -831,29 +832,29 @@ s["ROGUE"] = {
     },
     [6] = {
         1776, -- gouge
-        1757, -- sinister strike r2
-        3127 -- parry
+        1757 -- sinister strike r2
     },
     [8] = {
         5277, -- evasion
         6760 -- eviscerate r2
     },
     [10] = {
-        921, -- pick pocket
         2983, -- sprint
         6452, -- Anti-venom(FA)
-        674 -- dual wield
+        1424 -- dual wield
     },
     [12] = {
         1766, -- kick
         6770, -- sap
-        5171 -- slice and dice
+        5171, -- slice and dice
+        3128 -- parry
     },
     [14] = {
         703, -- garrote
         1758 -- sinister strike r3
     },
     [16] = {
+        5167, -- pick pocket
         6761, -- eviscerate r3
         1804 -- Pick Lock
     },
@@ -1205,7 +1206,7 @@ s["MAGE"] = {
         8438, -- arcane explosion r3
         6127, -- conjure water r4
         8412, -- fire blast r4
-        8101, -- fireball r6
+        8401, -- fireball r6
         7302, -- ice armor
         3565, -- darnassus
         3566 -- thunder bluff

@@ -1,11 +1,11 @@
-## Interface: 11403
+## Interface: 11501
 ## Title: RestedXP Guides
 ## Notes: In-game leveling guides
 ## Notes-zhCN: TODO
 ## Author: RestedXP
 ## Version: @project-version@
-## OptionalDeps: Questie, RestedXP_Themes
-## SavedVariables: RXPData, RXPDB
+## OptionalDeps: Questie, RXPGuides_Themes
+## SavedVariables: RXPData, RXPDB, RXPSettings
 ## SavedVariablesPerCharacter: RXPCData, RXPCTrackingData, RXPCComms, RXPCSettings
 ## X-Curse-Project-ID: 486246
 
@@ -18,6 +18,9 @@ RXPGuides.lua
 GuideWindow.lua
 Help.lua
 SettingsPanel.lua
+
+DB/classic.xml
+
 HSBatching.lua
 QuestLog.lua
 ActiveItemFrame.lua
@@ -25,14 +28,18 @@ LevelingTracker.lua
 Timers.lua
 Communications.lua
 Targeting.lua
+Tips.lua
 
-DB/classic.xml
 
 map.lua
 functions.lua
 GuideLoader.lua
+HardcoreIntroUI.lua
 
 Guides/GuideList-classic.xml
 
 Talents.lua
 Guides/Talents/classic.xml
+
+CptStadicsVendorTreasures.lua
+ItemUpgrades.lua

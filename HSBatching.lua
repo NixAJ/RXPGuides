@@ -6,33 +6,51 @@ local HSframe = CreateFrame("Frame");
 local currentFPS = GetCVar("maxfps")
 local HSstart = 0
 local batchingWindow = 0.006
+local bindConfirmation = string.gsub(CONFIRM_BINDER,"%%s",".-")
+
+local ConfirmBinder
+if C_PlayerInteractionManager and C_PlayerInteractionManager.ConfirmationInteraction and Enum and Enum.PlayerInteractionType and Enum.PlayerInteractionType.Binder then
+    ConfirmBinder = function()
+        return C_PlayerInteractionManager.ConfirmationInteraction(Enum.PlayerInteractionType.Binder)
+    end
+else
+    ConfirmBinder = _G.ConfirmBinder
+end
 
 local function SwitchBindLocation()
     if GetTime() - HSstart > 10 - batchingWindow then
-        if _G.ConfirmBinder then
-            _G.ConfirmBinder()
-        elseif C_PlayerInteractionManager then
-            C_PlayerInteractionManager.ConfirmationInteraction(Enum.PlayerInteractionType.Binder)
-        end
+        ConfirmBinder()
         HSframe:SetScript("OnUpdate", nil)
-        local size = addon.settings.db.profile.batchSize or 6
-        if size < 5 then
-            SetCVar("maxfps", currentFPS)
-        end
+        SetCVar("maxfps", currentFPS)
         HSstart = 0
+        --print('bind-ok')
     end
 end
+--[[
+hooksecurefunc("SetCVar",function(n,v)
+    if n == "maxfps" then
+        print(n,v)--ok
+        C_Timer.After(1,function()
+            print(GetCVar("maxfps"))
+        end)
+    end
+end)
+]]
 
 local function StartHSTimer()
     if HSstart == 0 then
-        local size = addon.settings.db.profile.batchSize or 6
+        --print('start-hs')
+        local size = addon.settings.profile.batchSize or 6
         batchingWindow = size / 1e3
         currentFPS = GetCVar("maxfps")
-        if size <= 5 then
-            SetCVar("maxfps", 200)
-        end
         HSstart = GetTime()
         HSframe:SetScript("OnUpdate", SwitchBindLocation)
+        local bind = _G.StaticPopup1 and _G.StaticPopup1.text and
+                            _G.StaticPopup1.text:GetText() or ""
+        if bind:find(bindConfirmation) then
+            SetCVar("maxfps", "250")
+            addon.StartTimer(10-batchingWindow,"Hearthstone")
+        end
     end
 end
 
@@ -50,6 +68,8 @@ end
 
 hooksecurefunc("UseAction", function(...)
     local event, id = GetActionInfo(...)
-    if event == "item" and id == 6948 or event == "macro" and
-        IsCurrentSpell(8690) then StartHSTimer() end
+    --print(event,id,IsCurrentSpell(id))
+    if event == "item" and id == 6948 or
+        event == "macro" and (IsCurrentSpell(8690) or IsCurrentSpell(556)) or
+        event == "spell" and id == 556 then StartHSTimer() end
 end)
